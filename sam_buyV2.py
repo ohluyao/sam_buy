@@ -51,9 +51,10 @@ def getAmout(goodlist):
     try:
         ret = requests.post(url=myUrl, headers=headers, data=json.dumps(data))
         myRet = json.loads(ret.text)
-        print(json.dumps(myRet, indent = 3, ensure_ascii = False))
+        #print(json.dumps(myRet, indent = 3, ensure_ascii = False))
 
         code = myRet['code']
+        print('getAmount returned: ', code)
         if code == "NO_MATCH_DELIVERY_MODE":
             return 0
         amout = myRet['data'].get('totalAmount')
@@ -183,8 +184,8 @@ def getUserCart(addressList, storeList, uid):
                 int(normalGoodsList[i].get('price')) / 100) + '元')
             goodlist.append(goodlistitem)
             
-        amount = int(getAmout(goodlist))
-        print('###获取购物车商品成功,总金额：' + str(int(amount) / 100))
+        # amount = int(getAmout(goodlist))
+        print('###获取购物车商品成功')
 
         if Capacity_index > 0:
             getCapacityData()
@@ -212,6 +213,7 @@ def getCapacityData():
         ret = requests.post(url=myUrl, headers=headers, data=json.dumps(data))
         # print(ret.text)
         myRet = json.loads(ret.text)
+        print(json.dumps(myRet, indent=3, ensure_ascii=False))
         print('#无库存释放,等待中')
         status = (myRet['data'].get('capcityResponseList')[0].get('dateISFull'))
         time_list = myRet['data'].get('capcityResponseList')[0].get('list')
@@ -259,6 +261,7 @@ def order(startRealTime, endRealTime):
             os.system(file)
             exit()
         else:
+            print(myRet.get('code'))
             if myRet.get('code') == 'STORE_HAS_CLOSED':
                 sleep(60)
                 getCapacityData()
@@ -332,10 +335,15 @@ if __name__ == '__main__':
     # 初始化
     address, store, uid = init()
   
-    if getUserCart(address, store, uid):
-        # getCapacityData
-        while 1:
-            count += 1
-            print('count:' + str(count))
+    userCartReady = False
+    while 1:
+        count += 1
+        print('Count: ', count)
+        if userCartReady == False:
+            print('getUserCart..')
+            if(getUserCart(address, store, uid)):
+                userCartReady = True
+                getCapacityData()
+        else:
             getCapacityData()
-            sleep(5)
+        sleep(1)
