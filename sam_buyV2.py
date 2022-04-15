@@ -1,4 +1,7 @@
+from distutils.command.config import config
+from email import header
 import json
+from textwrap import indent
 import requests
 from time import sleep
 
@@ -7,34 +10,24 @@ from time import sleep
 
 deviceid = 'x'
 authtoken = 'x'
-trackinfo = 'x'
 deliveryType = '0'  # 1：极速达 2：全城配送
 cartDeliveryType = 1  # 1：极速达 2：全城配送
-
+addressId = ''
+storeId = ''
 
 # ## init config over ###
+
+## shared API data ##
+
+commonHeaders = {}
+
+## shared API data ##
+
 
 def getAmout(goodlist):
     global amout
     myUrl = 'https://api-sams.walmartmobile.cn/api/v1/sams/trade/settlement/getSettleInfo'
-    headers = {
-        'Host': 'api-sams.walmartmobile.cn',
-        'Connection': 'keep-alive',
-        'Accept': '*/*',
-        'Content-Type': 'application/json;charset=UTF-8',
-        'Content-Length': '45',
-        'Accept-Encoding': 'gzip, deflate',
-        'Accept-Language': 'zh-CN,zh;q=0.9',
-        'User-Agent': 'SamClub/5.0.45 (iPhone; iOS 15.4; Scale/3.00)',
-        'device-name': 'iPhone14,3',
-        'device-os-version': '15.4',
-        'device-id': deviceid,
-        'latitude': address.get('latitude'),
-        'longitude': address.get('longitude'),
-        'device-type': 'ios',
-        'auth-token': authtoken,
-        'app-version': '5.0.45.1'
-    }
+    headers = commonHeaders
     data = {
         "goodsList": goodlist,
         "uid": uid,
@@ -58,7 +51,13 @@ def getAmout(goodlist):
     try:
         ret = requests.post(url=myUrl, headers=headers, data=json.dumps(data))
         myRet = json.loads(ret.text)
+        print(json.dumps(myRet, indent = 3, ensure_ascii = False))
+
+        code = myRet['code']
+        if code == "NO_MATCH_DELIVERY_MODE":
+            return 0
         amout = myRet['data'].get('totalAmount')
+
         return amout
     except Exception as e:
         print('getAmout [Error]: ' + str(e))
@@ -68,26 +67,17 @@ def address_list():
     global addressList_item
     print('###初始化地址')
     myUrl = 'https://api-sams.walmartmobile.cn/api/v1/sams/sams-user/receiver_address/address_list'
-    headers = {
-        'Host': 'api-sams.walmartmobile.cn',
-        'Connection': 'keep-alive',
-        'Accept': '*/*',
-        'Accept-Encoding': 'gzip, deflate',
-        'Accept-Language': 'zh-CN,zh;q=0.9',
-        'User-Agent': 'SamClub/5.0.45 (iPhone; iOS 15.4; Scale/3.00)',
-        'device-name': 'iPhone14,3',
-        'device-os-version': '15.4',
-        'device-id': deviceid,
-        'device-type': 'ios',
-        'auth-token': authtoken,
-        'app-version': '5.0.45.1'
-    }
+    headers = commonHeaders
     ret = requests.get(url=myUrl, headers=headers)
     myRet = json.loads(ret.text)
+    #print(json.dumps(myRet, indent = 3, ensure_ascii=False))
     addressList = myRet['data'].get('addressList')
     addressList_item = []
 
+    s = -1
     for i in range(0, len(addressList)):
+        if addressId != "" and addressList[i].get("addressId") == addressId:
+            s = i
         addressList_item.append({
             'addressId': addressList[i].get("addressId"),
             'mobile': addressList[i].get("mobile"),
@@ -101,10 +91,12 @@ def address_list():
             'latitude': addressList[i].get('latitude'),
             'longitude': addressList[i].get('longitude')
         })
-        print('[' + str(i) + ']' + addressList[i].get("name") + addressList[i].get("mobile") + addressList[i].get(
-            "districtName") + addressList[i].get("receiverAddress") + addressList[i].get("detailAddress"))
-    print('根据编号选择地址:')
-    s = int(input())
+        print('[' + str(i) + ']' + '[' + addressList[i].get("addressId") + ']' + addressList[i].get("name") + addressList[i].get("mobile") + addressList[i].get("districtName") + addressList[i].get("receiverAddress"))
+    if s == -1:
+        print('根据编号选择地址:')
+        s = int(input())
+    else:
+        print('使用默认地址：',s)
     addressList_item = addressList_item[s]
     # print(addressList_item)
     return addressList_item
@@ -120,28 +112,15 @@ def getRecommendStoreListByLocation(latitude, longitude):
     data = {
         'longitude': longitude,
         'latitude': latitude}
-    headers = {
-        'Host': 'api-sams.walmartmobile.cn',
-        'Connection': 'keep-alive',
-        'Accept': '*/*',
-        'Content-Type': 'application/json;charset=UTF-8',
-        'Content-Length': '45',
-        'Accept-Encoding': 'gzip, deflate',
-        'Accept-Language': 'zh-CN,zh;q=0.9',
-        'User-Agent': 'SamClub/5.0.45 (iPhone; iOS 15.4; Scale/3.00)',
-        'device-name': 'iPhone14,3',
-        'device-os-version': '15.4',
-        'device-id': deviceid,
-        'latitude': latitude,
-        'device-type': 'ios',
-        'auth-token': authtoken,
-        'app-version': '5.0.45.1'
-    }
+    headers = commonHeaders    
     try:
         ret = requests.post(url=myUrl, headers=headers, data=json.dumps(data))
         myRet = json.loads(ret.text)
         storeList = myRet['data'].get('storeList')
+        s = -1
         for i in range(0, len(storeList)):
+            if storeId != "" and storeList[i].get("storeId") == storeId:
+                s = i
             storeList_item.append(
                 {
                     'storeType': storeList[i].get("storeType"),
@@ -153,25 +132,14 @@ def getRecommendStoreListByLocation(latitude, longitude):
                     'storeName': storeList[i].get("storeName")
                 })
             print('[' + str(i) + ']' + storeList_item[i].get("storeId") + storeList_item[i].get("storeName"))
-        print('根据编号下单商店:')
-        s = int(input())
+        if s == -1:
+            print('根据编号下单商店:')
+            s = int(input())
+        else:
+            print('使用默认商店：', s)
         good_store = storeList_item[s]
         uidUrl = 'https://api-sams.walmartmobile.cn/api/v1/sams/sams-user/user/personal_center_info'
-        ret = requests.get(url=uidUrl, headers={
-            'Host': 'api-sams.walmartmobile.cn',
-            'Connection': 'keep-alive',
-            'Accept': '*/*',
-            'Accept-Encoding': 'gzip, deflate',
-            'Accept-Language': 'zh-CN,zh;q=0.9',
-            'User-Agent': 'SamClub/5.0.45 (iPhone; iOS 15.4; Scale/3.00)',
-            'device-name': 'iPhone14,3',
-            'device-os-version': '15.4',
-            'device-id': deviceid,
-            'latitude': latitude,
-            'device-type': 'ios',
-            'auth-token': authtoken,
-            'app-version': '5.0.45.1'
-        })
+        ret = requests.get(url=uidUrl, headers=commonHeaders)
         # print(ret.text)
         uidRet = json.loads(ret.text)
         uid = uidRet['data']['memInfo']['uid']
@@ -193,26 +161,7 @@ def getUserCart(addressList, storeList, uid):
         "uid": uid, "deliveryType": deliveryType, "deviceType": "ios", "storeList": storeList, "parentDeliveryType": 1,
         "homePagelongitude": addressList.get('longitude'), "homePagelatitude": addressList.get('latitude')
     }
-    headers = {
-        'Host': 'api-sams.walmartmobile.cn',
-        'Connection': 'keep-alive',
-        'Accept': '*/*',
-        'Content-Type': 'application/json;charset=UTF-8',
-        'Content-Length': '704',
-        'Accept-Encoding': 'gzip, deflate',
-        'Accept-Language': 'zh-CN,zh;q=0.9',
-        'User-Agent': 'SamClub/5.0.45 (iPhone; iOS 15.4; Scale/3.00)',
-        'device-name': 'iPhone14,3',
-        'device-os-version': '15.4',
-        'device-id': deviceid,
-        'latitude': address.get('latitude'),
-        'longitude': address.get('longitude'),
-        'track-info': trackinfo,
-        'device-type': 'ios',
-        'auth-token': authtoken,
-        'app-version': '5.0.45.1'
-
-    }
+    headers = commonHeaders
     try:
         ret = requests.post(url=myUrl, headers=headers, data=json.dumps(data))
         # print(ret.text)
@@ -257,25 +206,8 @@ def getCapacityData():
         "perDateList": ["2022-04-13", "2022-04-14", "2022-04-15", "2022-04-16", "2022-04-17", "2022-04-18",
                         "2022-04-19"], "storeDeliveryTemplateId": good_store.get('storeDeliveryTemplateId')
     }
-    headers = {
-        'Host': 'api-sams.walmartmobile.cn',
-        'Connection': 'keep-alive',
-        'Accept': '*/*',
-        'Content-Type': 'application/json;charset=UTF-8',
-        'Content-Length': '156',
-        'Accept-Encoding': 'gzip, deflate',
-        'Accept-Language': 'zh-CN,zh;q=0.9',
-        'User-Agent': 'SamClub/5.0.45 (iPhone; iOS 15.4; Scale/3.00)',
-        'device-name': 'iPhone14,3',
-        'device-os-version': '15.4',
-        'device-id': deviceid,
-        'longitude': address.get('longitude'),
-        'latitude': address.get('latitude'),
-        'device-type': 'ios',
-        'auth-token': authtoken,
-        'app-version': '5.0.45.1'
-
-    }
+    headers = commonHeaders
+    
     try:
         ret = requests.post(url=myUrl, headers=headers, data=json.dumps(data))
         # print(ret.text)
@@ -313,26 +245,7 @@ def order(startRealTime, endRealTime):
             "storeInfo": {"storeId": good_store.get('storeId'), "storeType": good_store.get('storeType'),
                           "areaBlockId": good_store.get('areaBlockId')},
             "shortageDesc": "其他商品继续配送（缺货商品直接退款）", "payMethodId": "1486659732"}
-    headers = {
-        'Host': 'api-sams.walmartmobile.cn',
-        'Connection': 'keep-alive',
-        'Accept': '*/*',
-        'Content-Type': 'application/json',
-        'Content-Length': '1617',
-        'Accept-Encoding': 'gzip, deflate',
-        'Accept-Language': 'zh-CN,zh;q=0.9',
-        'User-Agent': 'SamClub/5.0.45 (iPhone; iOS 15.4; Scale/3.00)',
-        'device-name': 'iPhone14,3',
-        'device-os-version': '15.4',
-        'device-id': deviceid,
-        'longitude': address.get('longitude'),
-        'latitude': address.get('latitude'),
-        'track-info': trackinfo,
-        'device-type': 'ios',
-        'auth-token': authtoken,
-        'app-version': '5.0.45.1'
-
-    }
+    headers = commonHeaders
 
     try:
         ret = requests.post(url=myUrl, headers=headers, data=json.dumps(data))
@@ -374,8 +287,38 @@ def order(startRealTime, endRealTime):
 def init():
     # global address
     # global store
+    with open('userconfig.json') as configFile:
+        configData = json.load(configFile)
+    
+    global deviceid, authtoken, commonHeaders, addressId, storeId
+    if configData != None:
+        addressId = configData.get('addressid')
+        storeId = configData.get('storeid')
+        deviceid = configData.get('deviceid')
+        authtoken = configData.get('authtoken')
+    
+    commonHeaders = {
+        'Host': 'api-sams.walmartmobile.cn',
+        'Connection': 'keep-alive',
+        'Accept': '*/*',
+        'Content-Type': 'application/json;charset=UTF-8',
+        #'Content-Length': '156',
+        'Accept-Encoding': 'gzip, deflate',
+        'Accept-Language': 'zh-CN,zh;q=0.9',
+        'User-Agent': 'SamClub/5.0.47 (iPhone; iOS 15.4.1; Scale/3.00)',
+        'device-name': 'iPhone_12',
+        'device-os-version': '15.4.1',
+        'device-id': deviceid,
+        'device-type': 'ios',
+        'auth-token': authtoken,
+        'app-version': '5.0.47.0'
+    }
+
     address = address_list()
     store, uid = getRecommendStoreListByLocation(address.get('latitude'), address.get('longitude'))
+
+    commonHeaders["latitude"] = address.get('latitude')
+    commonHeaders["longitude"] = address.get('longitude')
     return address, store, uid
 
 
@@ -388,6 +331,7 @@ if __name__ == '__main__':
     goodlist = []
     # 初始化
     address, store, uid = init()
+  
     if getUserCart(address, store, uid):
         # getCapacityData
         while 1:
