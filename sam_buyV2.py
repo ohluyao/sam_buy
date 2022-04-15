@@ -2,8 +2,10 @@ from distutils.command.config import config
 from email import header
 import json
 from textwrap import indent
+from xml.sax import default_parser_list
 import requests
 from time import sleep
+import datetime
 
 # ## init config ###
 # 填写个人信息
@@ -14,7 +16,7 @@ deliveryType = '0'  # 1：极速达 2：全城配送
 cartDeliveryType = 1  # 1：极速达 2：全城配送
 addressId = ''
 storeId = ''
-
+promotionId = ''
 # ## init config over ###
 
 ## shared API data ##
@@ -43,10 +45,12 @@ def getAmout(goodlist):
             "storeType": good_store.get('storeType'),
             "areaBlockId": good_store.get('areaBlockId')
         },
-        "couponList": [],
         "isSelfPickup": 0,
         "floorId": 1,
     }
+
+    if promotionId != "":
+        data["couponList"] = [{"promotionId":promotionId,"storeId":good_store.get('storeId')}]
 
     try:
         ret = requests.post(url=myUrl, headers=headers, data=json.dumps(data))
@@ -54,7 +58,8 @@ def getAmout(goodlist):
         #print(json.dumps(myRet, indent = 3, ensure_ascii = False))
 
         code = myRet['code']
-        print('getAmount returned: ', code)
+        #print(json.dumps(myRet, indent=3, ensure_ascii=False))
+        print('getAmount returned: ', code,)
         if code == "NO_MATCH_DELIVERY_MODE":
             return 0
         amout = myRet['data'].get('totalAmount')
@@ -62,7 +67,7 @@ def getAmout(goodlist):
         return amout
     except Exception as e:
         print('getAmout [Error]: ' + str(e))
-
+    
 
 def address_list():
     global addressList_item
@@ -184,8 +189,8 @@ def getUserCart(addressList, storeList, uid):
                 int(normalGoodsList[i].get('price')) / 100) + '元')
             goodlist.append(goodlistitem)
             
-        # amount = int(getAmout(goodlist))
-        print('###获取购物车商品成功')
+        amount = int(getAmout(goodlist))
+        print('###获取购物车商品成功,总金额：' + str(int(amount) / 100))
 
         if Capacity_index > 0:
             getCapacityData()
@@ -202,15 +207,22 @@ def getCapacityData():
     global endRealTime
 
     myUrl = 'https://api-sams.walmartmobile.cn/api/v1/sams/delivery/portal/getCapacityData'
+    date_list = []
+    for i in range(7):
+        date_list.append(
+            (datetime.datetime.now() + datetime.timedelta(days=i)).strftime('%Y-%m-%d')
+        )
+
     data = {
         # YOUR SELF
-        "perDateList": ["2022-04-13", "2022-04-14", "2022-04-15", "2022-04-16", "2022-04-17", "2022-04-18",
-                        "2022-04-19"], "storeDeliveryTemplateId": good_store.get('storeDeliveryTemplateId')
+        "perDateList": date_list, 
+        "storeDeliveryTemplateId": good_store.get('storeDeliveryTemplateId')
     }
     headers = commonHeaders
     
     try:
         ret = requests.post(url=myUrl, headers=headers, data=json.dumps(data))
+        print(ret)
         # print(ret.text)
         myRet = json.loads(ret.text)
         print(json.dumps(myRet, indent=3, ensure_ascii=False))
@@ -247,6 +259,10 @@ def order(startRealTime, endRealTime):
             "storeInfo": {"storeId": good_store.get('storeId'), "storeType": good_store.get('storeType'),
                           "areaBlockId": good_store.get('areaBlockId')},
             "shortageDesc": "其他商品继续配送（缺货商品直接退款）", "payMethodId": "1486659732"}
+
+    if promotionId != "":
+        data["couponList"] = [{"promotionId":promotionId,"storeId":good_store.get('storeId')}]
+    
     headers = commonHeaders
 
     try:
@@ -293,12 +309,13 @@ def init():
     with open('userconfig.json') as configFile:
         configData = json.load(configFile)
     
-    global deviceid, authtoken, commonHeaders, addressId, storeId
+    global deviceid, authtoken, commonHeaders, addressId, storeId, promotionId
     if configData != None:
         addressId = configData.get('addressid')
         storeId = configData.get('storeid')
         deviceid = configData.get('deviceid')
         authtoken = configData.get('authtoken')
+        promotionId = configData.get('promotionid')
     
     commonHeaders = {
         'Host': 'api-sams.walmartmobile.cn',
@@ -346,4 +363,4 @@ if __name__ == '__main__':
                 getCapacityData()
         else:
             getCapacityData()
-        sleep(1)
+        sleep(0.5)
