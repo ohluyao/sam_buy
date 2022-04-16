@@ -6,6 +6,7 @@ from xml.sax import default_parser_list
 import requests
 from time import sleep
 import datetime
+import time
 
 # ## init config ###
 # 填写个人信息
@@ -17,6 +18,7 @@ cartDeliveryType = 1  # 1：极速达 2：全城配送
 addressId = ''
 storeId = ''
 promotionId = ''
+promotioncount = 0
 # ## init config over ###
 
 ## shared API data ##
@@ -26,7 +28,7 @@ commonHeaders = {}
 ## shared API data ##
 
 
-def getAmout(goodlist):
+def getAmount(goodlist):
     global amout
     myUrl = 'https://api-sams.walmartmobile.cn/api/v1/sams/trade/settlement/getSettleInfo'
     headers = commonHeaders
@@ -66,7 +68,8 @@ def getAmout(goodlist):
 
         return amout
     except Exception as e:
-        print('getAmout [Error]: ' + str(e))
+        print('getAmount [Error]: ' + str(e))
+        return 0
     
 
 def address_list():
@@ -172,9 +175,18 @@ def getUserCart(addressList, storeList, uid):
         ret = requests.post(url=myUrl, headers=headers, data=json.dumps(data))
         # print(ret.text)
         myRet = json.loads(ret.text)
-        # print(myRet['data'].get('capcityResponseList')[0])
+        if myRet['code'] != 'Success':
+            return False
+
         normalGoodsList = (myRet['data'].get('floorInfoList')[0].get('normalGoodsList'))
         # time_list = myRet['data'].get('capcityResponseList')[0].get('list')
+        if len(normalGoodsList) == 0:
+            return False
+
+        # clear the current goodList
+        print('refresh the good list')
+        goodlist = []
+        amount = 0
         for i in range(0, len(normalGoodsList)):
             spuId = normalGoodsList[i].get('spuId')
             storeId = normalGoodsList[i].get('storeId')
@@ -184,13 +196,12 @@ def getUserCart(addressList, storeList, uid):
                 "storeId": storeId,
                 "isSelected": 'true',
                 "quantity": quantity,
+                "price": int(normalGoodsList[i].get('price'))
             }
-            print('目前有库存：' + normalGoodsList[i].get('goodsName') + '\t#数量：' + str(quantity) + '\t#金额：' + str(
+            print('目前有库存：' + "[" + normalGoodsList[i].get('spuId') + "]" + normalGoodsList[i].get('goodsName') + '\t#数量：' + str(quantity) + '\t#金额：' + str(
                 int(normalGoodsList[i].get('price')) / 100) + '元')
             goodlist.append(goodlistitem)
-            
-        amount = int(getAmout(goodlist))
-        print('###获取购物车商品成功,总金额：' + str(int(amount) / 100))
+        print('###获取购物车商品成功')
 
         if Capacity_index > 0:
             getCapacityData()
@@ -222,17 +233,27 @@ def getCapacityData():
     
     try:
         ret = requests.post(url=myUrl, headers=headers, data=json.dumps(data))
-        print(ret)
+        if ret.status_code != 200:
+            print('GetCapacityData returned', ret.status_code)
+            return False
         # print(ret.text)
         myRet = json.loads(ret.text)
-        print(json.dumps(myRet, indent=3, ensure_ascii=False))
+        #print(json.dumps(myRet, indent=3, ensure_ascii=False))
         print('#无库存释放,等待中')
+        
+        if myRet['code'] != 'Success':
+            print('#获取库存信息失败')
+            return False
+        
         status = (myRet['data'].get('capcityResponseList')[0].get('dateISFull'))
         time_list = myRet['data'].get('capcityResponseList')[0].get('list')
         for i in range(0, len(time_list)):
+            startRealTime = time_list[i].get('startRealTime')
+            endRealTime = time_list[i].get('endRealTime')
+            startDateTime = time.strftime('%Y-%m-%d %H:%M:%S', time.localtime(float(startRealTime)/1000))
+            endDateTime = time.strftime('%Y-%m-%d %H:%M:%S', time.localtime(float(endRealTime)/1000))
+            print(startDateTime, "-", endDateTime, "timeISFull:", time_list[i].get('timeISFull'))
             if not time_list[i].get('timeISFull'):
-                startRealTime = time_list[i].get('startRealTime')
-                endRealTime = time_list[i].get('endRealTime')
                 # print(startRealTime)
                 print('#【成功】获取配送时间')
                 order(startRealTime, endRealTime)
@@ -244,7 +265,9 @@ def getCapacityData():
 
 def order(startRealTime, endRealTime):
     global index
-    print('下单：' + startRealTime)
+    startDateTime = time.strftime('%Y-%m-%d %H:%M:%S', time.localtime(float(startRealTime)/1000))
+    endDateTime = time.strftime('%Y-%m-%d %H:%M:%S', time.localtime(float(endRealTime)/1000))
+    print('下单：' + startRealTime, startDateTime, "-", endDateTime)
     myUrl = 'https://api-sams.walmartmobile.cn/api/v1/sams/trade/settlement/commitPay'
     data = {"goodsList": goodlist,
             "invoiceInfo": {},
@@ -284,9 +307,9 @@ def order(startRealTime, endRealTime):
                 return
             elif myRet.get('code') == 'LIMITED':
                 index += 1
-                if index > 5:
+                if index > 3:
                     index = 0
-                    getCapacityData()
+                    return
                 order(startRealTime, endRealTime)
                 return
             elif myRet.get('code') == 'OUT_OF_STOCK':
@@ -309,13 +332,14 @@ def init():
     with open('userconfig.json') as configFile:
         configData = json.load(configFile)
     
-    global deviceid, authtoken, commonHeaders, addressId, storeId, promotionId
+    global deviceid, authtoken, commonHeaders, addressId, storeId, promotionId, amount, promotioncount
     if configData != None:
         addressId = configData.get('addressid')
         storeId = configData.get('storeid')
         deviceid = configData.get('deviceid')
         authtoken = configData.get('authtoken')
         promotionId = configData.get('promotionid')
+        promotioncount = configData.get('promotioncount')
     
     commonHeaders = {
         'Host': 'api-sams.walmartmobile.cn',
@@ -341,13 +365,59 @@ def init():
     commonHeaders["longitude"] = address.get('longitude')
     return address, store, uid
 
+def forceOrder():
+
+    if len(goodlist) == 0:
+        print('goodList is Empty')
+        return False
+    epoch = datetime.datetime.utcfromtimestamp(0)
+    for i in range(1, 3):
+        targetDate = datetime.datetime.utcnow() + datetime.timedelta(days=i)
+        now = datetime.datetime.now()
+        # 9-15
+        if now.hour < 12:
+            startTime = targetDate.replace(hour = 1, minute = 0, second=0, microsecond=0)
+            endTime = targetDate.replace(hour = 7, minute = 0, second=0, microsecond=0)
+            startTimeStamp = '{0:.2f}'.format((startTime - epoch).total_seconds() * 1000.0).rstrip('0').rstrip('.')
+            endTimeStamp = '{0:.2f}'.format((endTime - epoch).total_seconds() * 1000.0).rstrip('0').rstrip('.')
+            order(startTimeStamp, endTimeStamp)
+            # 15-21
+            startTime = targetDate.replace(hour = 7, minute = 0, second=0, microsecond=0)
+            endTime = targetDate.replace(hour = 13, minute = 0, second=0, microsecond=0)
+            startTimeStamp = '{0:.2f}'.format((startTime - epoch).total_seconds() * 1000.0).rstrip('0').rstrip('.')
+            endTimeStamp = '{0:.2f}'.format((endTime - epoch).total_seconds() * 1000.0).rstrip('0').rstrip('.')
+            order(startTimeStamp, endTimeStamp)
+        else:
+            # 9 - 21
+            startTime = targetDate.replace(hour = 1, minute = 0, second=0, microsecond=0)
+            endTime = targetDate.replace(hour = 10, minute = 0, second=0, microsecond=0)
+            startTimeStamp = '{0:.2f}'.format((startTime - epoch).total_seconds() * 1000.0).rstrip('0').rstrip('.')
+            endTimeStamp = '{0:.2f}'.format((endTime - epoch).total_seconds() * 1000.0).rstrip('0').rstrip('.')
+            order(startTimeStamp, endTimeStamp)
+
+    return True
+
+# used to calculate amount if getAmount failed from server
+def calculateAmount():
+    if len(goodlist) == 0:
+        return 0
+
+    total = 0
+    for good in goodlist:
+        total += good['price']
+
+    print('total:', total, 'promotioncount:', promotioncount)
+    total -= promotioncount * 100
+    return total
 
 if __name__ == '__main__':
+    global amount, goodlist
     count = 0
     index = 0
     Capacity_index = 0
     startRealTime = ''
     endRealTime = ''
+    amount = 0
     goodlist = []
     # 初始化
     address, store, uid = init()
@@ -356,11 +426,27 @@ if __name__ == '__main__':
     while 1:
         count += 1
         print('Count: ', count)
-        if userCartReady == False:
-            print('getUserCart..')
+        # refresh use cart if goodList is empty
+        if len(goodlist) == 0:
+            print('getUserCart as goodlist is empty')
             if(getUserCart(address, store, uid)):
                 userCartReady = True
+                amount = int(getAmount(goodlist))
+                print('getAmount success. Current Amount:', amount)
+                if amount == 0:
+                    amount = calculateAmount()
+                    print('getAmount returned 0, use calculated amount:', amount)
                 getCapacityData()
+                forceOrder()
         else:
+            if count % 10 == 0:
+                getUserCart(address, store, uid)
+            if amount == 0:
+                amount = int(getAmount(goodlist))
+                print('getAmount success. Current Amount:', amount)
+            if amount == 0:
+                amount = calculateAmount()
+                print('getAmount returned 0, use calculated amount:', amount)
             getCapacityData()
-        sleep(0.5)
+            forceOrder()
+        sleep(1)

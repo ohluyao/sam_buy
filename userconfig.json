@@ -3,5 +3,6 @@
     "authtoken": "",
     "addressid": "",
     "storeid": "",
-    "promotionid": ""
+    "promotionid": "",
+    "promotioncount": 0
 }
